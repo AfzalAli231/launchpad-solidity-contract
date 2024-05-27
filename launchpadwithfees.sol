@@ -147,6 +147,7 @@ contract LaunchpadContract {
     event LaunchpadCanceled(uint256 indexed launchpadId);
     event LaunchpadPaused(uint256 indexed launchpadId);
     event LaunchpadUnpaused(uint256 indexed launchpadId);
+    event CurrentTime(uint256 indexed currentTime);
 
     // Modifier to ensure only the admin can execute certain functions
     modifier onlyAdmin() {
@@ -289,7 +290,7 @@ contract LaunchpadContract {
             "Launchpad is not active"
         );
         require(
-            launchpads[launchpadId].endTime < block.timestamp,
+            launchpads[launchpadId].endTime > block.timestamp,
             "Vesting already finished"
         );
 
@@ -482,7 +483,7 @@ contract LaunchpadContract {
             "Launchpad doesn't exist or not accessible"
         );
         require(
-            launchpads[launchpadId].endTime <= block.timestamp ||
+            launchpads[launchpadId].endTime > block.timestamp ||
                 launchpadtokens[launchpadId].hardCap ==
                 launchpadtokens[launchpadId].raisedAmount,
             "Vesting not finished or hard cap not reached"
@@ -516,7 +517,7 @@ contract LaunchpadContract {
         );
 
         require(
-            launchpads[launchpadId].endTime <= block.timestamp ||
+            launchpads[launchpadId].endTime > block.timestamp ||
                 launchpadtokens[launchpadId].hardCap ==
                 launchpadtokens[launchpadId].raisedAmount,
             "Vesting not finished or hard cap not reached"
