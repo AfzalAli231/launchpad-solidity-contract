@@ -1,3 +1,7 @@
+/**
+ *Submitted for verification at amoy.polygonscan.com on 2024-05-27
+*/
+
 // SPDX-License-Identifier: MIT
 pragma solidity =0.7.6;
 
@@ -5,86 +9,15 @@ pragma solidity =0.7.6;
  * @dev Interface of the ERC20 standard as defined in the EIP.
  */
 interface IERC20 {
-    /**
-     * @dev Emitted when `value` tokens are moved from one account (`from`) to
-     * another (`to`).
-     *
-     * Note that `value` may be zero.
-     */
     event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
 
-    /**
-     * @dev Emitted when the allowance of a `spender` for an `owner` is set by
-     * a call to {approve}. `value` is the new allowance.
-     */
-    event Approval(
-        address indexed owner,
-        address indexed spender,
-        uint256 value
-    );
-
-    /**
-     * @dev Returns the value of tokens in existence.
-     */
     function totalSupply() external view returns (uint256);
-
-    /**
-     * @dev Returns the value of tokens owned by `account`.
-     */
     function balanceOf(address account) external view returns (uint256);
-
-    /**
-     * @dev Moves a `value` amount of tokens from the caller's account to `to`.
-     *
-     * Returns a boolean value indicating whether the operation succeeded.
-     *
-     * Emits a {Transfer} event.
-     */
     function transfer(address to, uint256 value) external returns (bool);
-
-    /**
-     * @dev Returns the remaining number of tokens that `spender` will be
-     * allowed to spend on behalf of `owner` through {transferFrom}. This is
-     * zero by default.
-     *
-     * This value changes when {approve} or {transferFrom} are called.
-     */
-    function allowance(
-        address owner,
-        address spender
-    ) external view returns (uint256);
-
-    /**
-     * @dev Sets a `value` amount of tokens as the allowance of `spender` over the
-     * caller's tokens.
-     *
-     * Returns a boolean value indicating whether the operation succeeded.
-     *
-     * IMPORTANT: Beware that changing an allowance with this method brings the risk
-     * that someone may use both the old and the new allowance by unfortunate
-     * transaction ordering. One possible solution to mitigate this race
-     * condition is to first reduce the spender's allowance to 0 and set the
-     * desired value afterwards:
-     * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-     *
-     * Emits an {Approval} event.
-     */
+    function allowance(address owner, address spender) external view returns (uint256);
     function approve(address spender, uint256 value) external returns (bool);
-
-    /**
-     * @dev Moves a `value` amount of tokens from `from` to `to` using the
-     * allowance mechanism. `value` is then deducted from the caller's
-     * allowance.
-     *
-     * Returns a boolean value indicating whether the operation succeeded.
-     *
-     * Emits a {Transfer} event.
-     */
-    function transferFrom(
-        address from,
-        address to,
-        uint256 value
-    ) external returns (bool);
+    function transferFrom(address from, address to, uint256 value) external returns (bool);
 }
 
 // Importing necessary libraries
@@ -102,12 +35,12 @@ contract LaunchpadContract {
 
     struct LockupDetails {
         uint256 cliffPeriod;
-        uint256 cliffduration;
+        uint256 cliffDuration;
     }
 
     struct ReleaseData {
-        uint256 releasetime;
-        uint256 percyclerelease;
+        uint256 releaseTime;
+        uint256 perCycleRelease;
     }
 
     struct Launchpad {
@@ -136,12 +69,14 @@ contract LaunchpadContract {
         uint256 raisedAmount; // Amount of tokens raised
     }
 
-    mapping(uint256 => Launchpad) public launchpads; // Mapping of Launchpad IDs to launchpads
-    mapping(uint256 => LaunchpadToken) public launchpadtokens; // Mapping of Launchpad IDs to launchpads
-    mapping(uint256 => LockupDetails) public lockupdetails;
+    mapping(uint256 => Launchpad) public launchpads;
+    mapping(uint256 => LaunchpadToken) public launchpadTokens;
+    mapping(uint256 => LockupDetails) public lockupDetails;
     mapping(uint256 => LockupHolder[]) public lockupHolders;
-    mapping(uint256 => ReleaseData[]) public tokenreleasedata;
+    mapping(uint256 => ReleaseData[]) public tokenReleaseData;
     uint256 public totalLaunchpads; // Total number of launchpads
+        uint256 public platformFee = 1; // 1% platform fee
+
 
     event LaunchpadAdded(uint256 indexed launchpadId);
     event LaunchpadCanceled(uint256 indexed launchpadId);
@@ -149,7 +84,6 @@ contract LaunchpadContract {
     event LaunchpadUnpaused(uint256 indexed launchpadId);
     event CurrentTime(uint256 indexed currentTime);
 
-    // Modifier to ensure only the admin can execute certain functions
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin can call this function");
         _;
@@ -157,8 +91,7 @@ contract LaunchpadContract {
 
     modifier onlyAdminOrTokenOwner(uint256 launchpadId) {
         require(
-            msg.sender == admin ||
-                msg.sender == launchpadtokens[launchpadId].tokenOwner,
+            msg.sender == admin || msg.sender == launchpadTokens[launchpadId].tokenOwner,
             "Only admin or token owner can call this function"
         );
         _;
@@ -167,6 +100,19 @@ contract LaunchpadContract {
     constructor() {
         admin = msg.sender;
     }
+
+    function updatePlatformFee(uint256 _platformFee) external onlyAdmin {
+        platformFee = _platformFee;
+    }
+
+    function applyPlatformFee(uint256 amount) internal {
+    uint256 platformFeeAmount = (amount * platformFee) / 100;
+    require(platformFeeAmount > 0, "Platform fee is zero");
+
+    // Transfer platform fee to the contract owner (admin)
+    (bool success, ) = admin.call{value: platformFeeAmount}("");
+    require(success, "Platform fee transfer failed");
+}
 
     // Function to add a new project
     function createLaunchpad(
@@ -186,8 +132,7 @@ contract LaunchpadContract {
     ) external payable {
         require(token != address(0), "Token address cannot be zero");
         require(
-            msg.value >=
-                (((hardCap * (tokenPrice) * 1) / 100) + ((hardCap * 5) / 100))  / 1 ether,
+            msg.value >= (((hardCap * tokenPrice * 1) / 100) + ((hardCap * 5) / 100)) / 1 ether,
             "Insufficient funds"
         );
         require(hardCap >= softCap, "HardCap must be more than softCap");
@@ -195,18 +140,16 @@ contract LaunchpadContract {
             hardCap > softCap + ((softCap * 40) / 100),
             "Hard Cap must be 40% more than soft cap"
         );
-        payable(address(this)).transfer(msg.value);
-        IERC20(token).transferFrom(msg.sender, address(this), tokenAmount / 1 ether);
 
-        uint launchpadId = totalLaunchpads++;
+        uint256 launchpadId = totalLaunchpads++;
 
         launchpads[launchpadId] = Launchpad({
-            live: live,
             minPurchase: minPurchase,
             maxPurchase: maxPurchase,
             startTime: startTime,
             endTime: endTime,
             totalTx: 0,
+            live: live,
             cancel: false,
             pauseUntil: block.timestamp,
             pauseStart: block.timestamp,
@@ -214,63 +157,49 @@ contract LaunchpadContract {
             softCap: softCap
         });
 
-        launchpadtokens[launchpadId] = LaunchpadToken({
+        launchpadTokens[launchpadId] = LaunchpadToken({
             token: token,
             name: name,
             symbol: symbol,
             tokenPrice: tokenPrice,
             hardCap: hardCap,
-            raisedAmount: 0,
+            tokenAmount: tokenAmount,
             tokenOwner: msg.sender,
             devPaid: (hardCap * 5) / 100,
-            tokenAmount: tokenAmount
+            raisedAmount: 0
         });
 
-        // developer will add days that will start after end time so following is the feature to add cliff period in end time
-        uint endTimeMiliSec = endTime;
-        uint cliffPeriodMiliSec = endTimeMiliSec + cliffDuration;
+        uint256 endTimeMilliSec = endTime;
+        uint256 cliffPeriodMilliSec = endTimeMilliSec + cliffDuration;
 
-        lockupdetails[launchpadId] = LockupDetails({
-            cliffPeriod: cliffPeriodMiliSec + cliffDuration,
-            cliffduration: cliffDuration
+        lockupDetails[launchpadId] = LockupDetails({
+            cliffPeriod: cliffPeriodMilliSec + cliffDuration,
+            cliffDuration: cliffDuration
         });
+
+        IERC20(token).transferFrom(msg.sender, address(this), tokenAmount);
+            applyPlatformFee(msg.value);
+
 
         emit LaunchpadAdded(launchpadId);
     }
 
-    // Function to updateOwner
     function setOwner(address newOwner) external onlyAdmin {
         admin = newOwner;
     }
 
-    function livePauseLaunchpad(
-        uint256 launchpadId
-    ) external onlyAdminOrTokenOwner(launchpadId) {
-        require(
-            !launchpads[launchpadId].cancel &&
-                launchpadtokens[launchpadId].tokenOwner == msg.sender &&
-                launchpadtokens[launchpadId].token != address(0),
-            "Launchpad Doesn't Exist!"
-        );
-        require(
-            block.timestamp <= launchpads[launchpadId].endTime,
-            "Vesting already finished"
-        );
+    function livePauseLaunchpad(uint256 launchpadId) external onlyAdminOrTokenOwner(launchpadId) {
+        require(!launchpads[launchpadId].cancel, "Launchpad canceled");
+        require(block.timestamp <= launchpads[launchpadId].endTime, "Vesting already finished");
 
         if (block.timestamp < launchpads[launchpadId].pauseUntil) {
-            require(
-                block.timestamp > launchpads[launchpadId].pauseStart + 43200,
-                "Live Pause Time is restricted to twelve hours"
-            );
+            require(block.timestamp > launchpads[launchpadId].pauseStart + 43200, "Live Pause Time is restricted to twelve hours");
             launchpads[launchpadId].live = true;
             launchpads[launchpadId].pauseStart = block.timestamp;
             launchpads[launchpadId].pauseUntil = block.timestamp;
             emit LaunchpadUnpaused(launchpadId);
         } else {
-            require(
-                launchpads[launchpadId].livePauseCount < 3,
-                "Live pause cycle is completed"
-            );
+            require(launchpads[launchpadId].livePauseCount < 3, "Live pause cycle completed");
             launchpads[launchpadId].live = false;
             launchpads[launchpadId].pauseUntil = block.timestamp + 172800;
             launchpads[launchpadId].pauseStart = block.timestamp;
@@ -280,24 +209,13 @@ contract LaunchpadContract {
     }
 
     function vest(uint256 launchpadId, uint256 tokenAmount) external payable {
-        require(
-            launchpadtokens[launchpadId].token != address(0) &&
-                !launchpads[launchpadId].cancel,
-            "Launchpad doesn't exist or not accessible"
-        );
-        require(
-            launchpads[launchpadId].live || launchpads[launchpadId].pauseUntil > block.timestamp,
-            "Launchpad is not active"
-        );
-        require(
-            launchpads[launchpadId].endTime > block.timestamp,
-            "Vesting already finished"
-        );
+        require(!launchpads[launchpadId].cancel, "Launchpad canceled");
+        require(launchpads[launchpadId].live || launchpads[launchpadId].pauseUntil < block.timestamp, "Launchpad not active");
+        require(block.timestamp <= launchpads[launchpadId].endTime, "Vesting already finished");
 
-        uint256 holderIndex = lockupHolders[launchpadId].length;
+        uint256 holderIndex;
         bool holderFound = false;
 
-        // Check if the investor already exists in lockupHolders
         for (uint256 i = 0; i < lockupHolders[launchpadId].length; i++) {
             if (lockupHolders[launchpadId][i].account == msg.sender) {
                 holderIndex = i;
@@ -306,8 +224,8 @@ contract LaunchpadContract {
             }
         }
 
-        // If investor not found, add them to lockupHolders
         if (!holderFound) {
+            holderIndex = lockupHolders[launchpadId].length;
             lockupHolders[launchpadId].push(
                 LockupHolder({
                     totalInvested: 0,
@@ -317,276 +235,179 @@ contract LaunchpadContract {
                     account: msg.sender
                 })
             );
-
-            holderIndex = lockupHolders[launchpadId].length;
         }
 
-        require(
-            (lockupHolders[launchpadId][holderIndex].totalInvested +
-                msg.value) >= launchpads[launchpadId].minPurchase,
-            "Minimum investment not satisfied"
-        );
-        require(
-            (lockupHolders[launchpadId][holderIndex].totalInvested +
-                msg.value) <= launchpads[launchpadId].maxPurchase,
-            "Maximum investment exceeded"
-        );
-        require(
-            (lockupHolders[launchpadId][holderIndex].totalInvested +
-                msg.value) +
-                launchpadtokens[launchpadId].raisedAmount <=
-                launchpadtokens[launchpadId].hardCap,
-            "Hardcap limit reached"
-        );
+        LockupHolder storage holder = lockupHolders[launchpadId][holderIndex];
+        uint256 newTotalInvested = holder.totalInvested + msg.value;
 
-        // Update investor's data
-        lockupHolders[launchpadId][holderIndex].claimableTokens += tokenAmount;
-        lockupHolders[launchpadId][holderIndex].totalInvested += msg.value;
-        lockupHolders[launchpadId][holderIndex].vestedDate = block.timestamp;
+        require(newTotalInvested >= launchpads[launchpadId].minPurchase, "Minimum investment not satisfied");
+        require(newTotalInvested <= launchpads[launchpadId].maxPurchase, "Maximum investment exceeded");
+        require(newTotalInvested + launchpadTokens[launchpadId].raisedAmount <= launchpadTokens[launchpadId].hardCap, "Hardcap limit reached");
 
-        require(
-            launchpadtokens[launchpadId].raisedAmount !=
-                launchpadtokens[launchpadId].hardCap,
-            "Hardcap limit reached"
-        );
+        holder.claimableTokens += tokenAmount;
+        holder.totalInvested = newTotalInvested;
+        holder.vestedDate = block.timestamp;
 
-        // If hardcap is reached, adjust cliffPeriod
-        if (
-            msg.value + launchpadtokens[launchpadId].raisedAmount ==
-            launchpadtokens[launchpadId].hardCap
-        ) {
-            uint256 newCliff = block.timestamp +
-                lockupdetails[launchpadId].cliffduration;
+        launchpadTokens[launchpadId].raisedAmount += msg.value;
+        launchpads[launchpadId].totalTx += 1;
+        applyPlatformFee(msg.value);
+
+
+        if (launchpadTokens[launchpadId].raisedAmount == launchpadTokens[launchpadId].hardCap) {
+            uint256 newCliff = block.timestamp + lockupDetails[launchpadId].cliffDuration;
 
             if (launchpads[launchpadId].endTime > block.timestamp) {
-                uint256 sub_duration = launchpads[launchpadId].endTime -
-                    block.timestamp;
-                for (
-                    uint256 i = 0;
-                    i < tokenreleasedata[launchpadId].length;
-                    i++
-                ) {
-                    tokenreleasedata[launchpadId][i]
-                        .releasetime -= sub_duration;
+                uint256 subDuration = launchpads[launchpadId].endTime - block.timestamp;
+                for (uint256 i = 0; i < tokenReleaseData[launchpadId].length; i++) {
+                    tokenReleaseData[launchpadId][i].releaseTime = tokenReleaseData[launchpadId][i].releaseTime - subDuration;
                 }
+                launchpads[launchpadId].endTime = block.timestamp;
             }
 
-            lockupdetails[launchpadId].cliffPeriod = newCliff;
+            if (lockupDetails[launchpadId].cliffPeriod > block.timestamp) {
+                lockupDetails[launchpadId].cliffPeriod = newCliff;
+            }
         }
-
-        // Transfer received funds to the contract
-        payable(address(this)).transfer(msg.value);
-
-        // Update raised amount and total transactions
-        launchpadtokens[launchpadId].raisedAmount += msg.value;
-        launchpads[launchpadId].totalTx += 1;
     }
 
-    function retrieve(
-        uint256 launchpadId
-    ) external onlyAdminOrTokenOwner(launchpadId) {
-        require(
-            launchpadtokens[launchpadId].tokenOwner == msg.sender &&
-                launchpadtokens[launchpadId].token != address(0) &&
-                !launchpads[launchpadId].cancel,
-            "Launchpad doesn't exist or not accessible"
-        );
+    function withdrawRaisedFunds(uint256 launchpadId) external onlyAdmin {
+        require(launchpadTokens[launchpadId].raisedAmount >= launchpads[launchpadId].softCap, "Softcap not reached");
+        require(block.timestamp >= launchpads[launchpadId].endTime, "Launchpad not ended");
 
-        require(
-            block.timestamp <= launchpads[launchpadId].endTime,
-            "Vesting already finished"
-        );
+        uint256 raisedAmount = launchpadTokens[launchpadId].raisedAmount;
+        launchpadTokens[launchpadId].raisedAmount = 0;
 
-        uint256 holderIndex = 0;
-        bool foundHolder = false;
+        address tokenOwner = launchpadTokens[launchpadId].tokenOwner;
+        uint256 devPaid = launchpadTokens[launchpadId].devPaid;
 
-        // Find the index of the lockup holder for the sender
+        (bool successAdmin, ) = admin.call{value: devPaid}("");
+        require(successAdmin, "Admin withdrawal failed");
+
+        (bool successTokenOwner, ) = tokenOwner.call{value: raisedAmount - devPaid}("");
+        require(successTokenOwner, "Token owner withdrawal failed");
+    }
+
+    function claimTokens(uint256 launchpadId) external {
+        require(block.timestamp >= lockupDetails[launchpadId].cliffPeriod, "Cliff period not ended");
+
+        uint256 holderIndex;
+        bool holderFound = false;
+
         for (uint256 i = 0; i < lockupHolders[launchpadId].length; i++) {
             if (lockupHolders[launchpadId][i].account == msg.sender) {
                 holderIndex = i;
-                foundHolder = true;
+                holderFound = true;
                 break;
             }
         }
 
-        require(foundHolder, "User not found in lockup holders");
+        require(holderFound, "Holder not found");
 
-        require(
-            lockupHolders[launchpadId][holderIndex].claimableTokens > 0,
-            "No claimable tokens available"
-        );
+        LockupHolder storage holder = lockupHolders[launchpadId][holderIndex];
+        uint256 remainingTokens = holder.claimableTokens;
+        require(remainingTokens > 0, "No tokens to claim");
 
-        // Reduce the raised amount by the total invested amount of the holder
-        launchpadtokens[launchpadId].raisedAmount -= lockupHolders[launchpadId][
-            holderIndex
-        ].totalInvested;
+        uint256 perCycleRelease = remainingTokens / tokenReleaseData[launchpadId].length;
+        uint256 cyclesToRelease = (block.timestamp - lockupDetails[launchpadId].cliffPeriod) / lockupDetails[launchpadId].cliffDuration;
 
-        // Transfer the total invested amount back to the sender
-        payable(msg.sender).transfer(
-            lockupHolders[launchpadId][holderIndex].totalInvested
-        );
+        uint256 claimableTokens = perCycleRelease * cyclesToRelease;
+        holder.claimableTokens -= claimableTokens;
+        holder.cycleCompleted += cyclesToRelease;
 
-        // Reset the lockup holder's data
-        lockupHolders[launchpadId][holderIndex] = LockupHolder({
-            totalInvested: 0,
-            claimableTokens: 0,
-            vestedDate: 0,
-            cycleCompleted: 0,
-            account: msg.sender
-        });
+        IERC20(launchpadTokens[launchpadId].token).transfer(msg.sender, claimableTokens);
     }
 
-    function cancel(
-        uint256 launchpadId
-    ) external onlyAdminOrTokenOwner(launchpadId) {
-        require(
-            launchpadtokens[launchpadId].tokenOwner == msg.sender &&
-                !launchpads[launchpadId].cancel &&
-                launchpadtokens[launchpadId].token != address(0),
-            "Launchpad doesn't exist"
-        );
-        require(
-            launchpads[launchpadId].endTime > block.timestamp,
-            "Vesting already finished"
-        );
-        require(
-            launchpadtokens[launchpadId].raisedAmount >
-                launchpadtokens[launchpadId].hardCap,
-            "Hard cap not reached"
-        );
-
-        for (uint256 i = 0; i < lockupHolders[launchpadId].length; i++) {
-            LockupHolder memory holder = lockupHolders[launchpadId][i];
-            payable(holder.account).transfer(holder.totalInvested);
-        }
-
-        payable(admin).transfer(launchpadtokens[launchpadId].devPaid);
-        IERC20 tokenContract = IERC20(launchpadtokens[launchpadId].token);
-        tokenContract.transfer(
-            msg.sender,
-            launchpadtokens[launchpadId].tokenAmount / 1 ether
-        );
-
+    function cancelLaunchpad(uint256 launchpadId) external onlyAdminOrTokenOwner(launchpadId) {
+        require(block.timestamp <= launchpads[launchpadId].endTime, "Vesting already finished");
         launchpads[launchpadId].cancel = true;
+
+        uint256 raisedAmount = launchpadTokens[launchpadId].raisedAmount;
+        launchpadTokens[launchpadId].raisedAmount = 0;
+        (bool success, ) = launchpadTokens[launchpadId].tokenOwner.call{value: raisedAmount}("");
+        require(success, "Refund failed");
 
         emit LaunchpadCanceled(launchpadId);
     }
 
-    function sendInvestmentToDev(
-        uint256 launchpadId,
-        uint256 tokenAmount
-    ) external onlyAdmin {
-        require(
-            launchpadtokens[launchpadId].tokenOwner == msg.sender &&
-                launchpadtokens[launchpadId].token != address(0) &&
-                !launchpads[launchpadId].cancel,
-            "Launchpad doesn't exist or not accessible"
-        );
-        require(
-            launchpads[launchpadId].endTime > block.timestamp ||
-                launchpadtokens[launchpadId].hardCap ==
-                launchpadtokens[launchpadId].raisedAmount,
-            "Vesting not finished or hard cap not reached"
-        );
+    function claimRefund(uint256 launchpadId) external {
+        require(launchpads[launchpadId].cancel, "Launchpad not canceled");
 
-        // Transfer any excess tokens back to the token owner
-        if (
-            launchpadtokens[launchpadId].hardCap <
-            launchpadtokens[launchpadId].raisedAmount
-        ) {
-            IERC20 tokenContract = IERC20(launchpadtokens[launchpadId].token);
-            tokenContract.transfer(
-                launchpadtokens[launchpadId].tokenOwner,
-                tokenAmount / 1 ether
-            );
-        }
+        uint256 holderIndex;
+        bool holderFound = false;
 
-        // Transfer raised funds plus developer's share to the token owner
-        payable(launchpadtokens[launchpadId].tokenOwner).transfer(
-            launchpadtokens[launchpadId].raisedAmount +
-                launchpadtokens[launchpadId].devPaid
-        );
-    }
-
-    function claimTokens(uint256 launchpadId, uint256 epochCycle) external {
-        require(
-            launchpadtokens[launchpadId].tokenOwner == msg.sender &&
-                launchpadtokens[launchpadId].token != address(0) &&
-                !launchpads[launchpadId].cancel,
-            "Launchpad doesn't exist or not accessible"
-        );
-
-        require(
-            launchpads[launchpadId].endTime > block.timestamp ||
-                launchpadtokens[launchpadId].hardCap ==
-                launchpadtokens[launchpadId].raisedAmount,
-            "Vesting not finished or hard cap not reached"
-        );
-
-        // Fetch launchpad data
-        LaunchpadToken memory launchpadtoken = launchpadtokens[launchpadId];
-        ReleaseData[] memory tokenrelease = tokenreleasedata[launchpadId];
-        LockupDetails memory lockupdetail = lockupdetails[launchpadId];
-
-        require(
-            lockupdetail.cliffPeriod <= block.timestamp,
-            "Cliff Period not ended"
-        );
-
-        // Fetch release data for the given epoch cycle
-        ReleaseData memory releaseData = tokenrelease[epochCycle];
-
-        require(
-            releaseData.percyclerelease > 0 &&
-                releaseData.releasetime < block.timestamp,
-            "Cannot claim tokens"
-        );
-
-        // Find the index of the lockup holder for the sender
-        uint256 holderIndex = 0;
-        bool foundHolder = false;
         for (uint256 i = 0; i < lockupHolders[launchpadId].length; i++) {
             if (lockupHolders[launchpadId][i].account == msg.sender) {
                 holderIndex = i;
-                foundHolder = true;
+                holderFound = true;
                 break;
             }
         }
 
-        require(foundHolder, "User not found in lockup holders");
+        require(holderFound, "Holder not found");
 
-        // Ensure there are claimable tokens available
-        require(
-            lockupHolders[launchpadId][holderIndex].claimableTokens > 0,
-            "No claimable tokens available"
-        );
+        LockupHolder storage holder = lockupHolders[launchpadId][holderIndex];
+        uint256 refundAmount = holder.totalInvested;
 
-        LockupHolder memory currentHolder = lockupHolders[launchpadId][
-            holderIndex
-        ];
+        holder.totalInvested = 0;
+        holder.claimableTokens = 0;
+        holder.cycleCompleted = 0;
 
-        // Ensure the current cycle is not already completed
-        require(
-            currentHolder.cycleCompleted < epochCycle,
-            "Cannot claim tokens"
-        );
-
-        // Update the cycle completion status for the holder
-        lockupHolders[launchpadId][holderIndex].cycleCompleted = epochCycle;
-
-        // Calculate the amount of tokens to be claimed for the current cycle
-        uint256 calculate_claim_token_amount = (currentHolder.claimableTokens *
-            releaseData.percyclerelease) / 100;
-
-        // Transfer the calculated tokens to the holder
-        IERC20 tokenContract = IERC20(launchpadtoken.token);
-        tokenContract.transfer(msg.sender, calculate_claim_token_amount / 1 ether);
+        (bool success, ) = holder.account.call{value: refundAmount}("");
+        require(success, "Refund failed");
     }
 
-    // Function to withdraw funds (admin only)
-    function withdrawFunds() external onlyAdmin {
-        payable(admin).transfer(address(this).balance);
+    function getContractBalance() external view returns (uint256) {
+        return address(this).balance;
     }
 
-    receive() external payable {}
+    function updateLaunchpad(
+        uint256 launchpadId,
+        address token,
+        string memory name,
+        string memory symbol,
+        uint256 tokenPrice,
+        uint256 minPurchase,
+        uint256 maxPurchase,
+        uint256 hardCap,
+        uint256 startTime,
+        uint256 endTime,
+        uint256 cliffDuration,
+        bool live,
+        uint256 tokenAmount
+    ) external onlyAdmin {
+        require(!launchpads[launchpadId].cancel, "Launchpad canceled");
+
+        launchpads[launchpadId] = Launchpad({
+            minPurchase: minPurchase,
+            maxPurchase: maxPurchase,
+            startTime: startTime,
+            endTime: endTime,
+            totalTx: 0,
+            live: live,
+            cancel: false,
+            pauseUntil: block.timestamp,
+            pauseStart: block.timestamp,
+            livePauseCount: 0,
+            softCap: 0 // Update this field as per your requirements
+        });
+
+        launchpadTokens[launchpadId] = LaunchpadToken({
+            token: token,
+            name: name,
+            symbol: symbol,
+            tokenPrice: tokenPrice,
+            hardCap: hardCap,
+            tokenAmount: tokenAmount,
+            tokenOwner: msg.sender,
+            devPaid: (hardCap * 5) / 100,
+            raisedAmount: 0
+        });
+
+        lockupDetails[launchpadId] = LockupDetails({
+            cliffPeriod: endTime + cliffDuration,
+            cliffDuration: cliffDuration
+        });
+
+        IERC20(token).transferFrom(msg.sender, address(this), tokenAmount);
+    }
 }
