@@ -1,4 +1,8 @@
 /**
+ *Submitted for verification at amoy.polygonscan.com on 2024-06-04
+*/
+
+/**
  *Submitted for verification at amoy.polygonscan.com on 2024-05-27
 */
 
@@ -75,7 +79,7 @@ contract LaunchpadContract {
     mapping(uint256 => LockupHolder[]) public lockupHolders;
     mapping(uint256 => ReleaseData[]) public tokenReleaseData;
     uint256 public totalLaunchpads; // Total number of launchpads
-        uint256 public platformFee = 1; // 1% platform fee
+    uint256 public platformFee = 1; // 1% platform fee
 
 
     event LaunchpadAdded(uint256 indexed launchpadId);
@@ -106,13 +110,13 @@ contract LaunchpadContract {
     }
 
     function applyPlatformFee(uint256 amount) internal {
-    uint256 platformFeeAmount = (amount * platformFee) / 100;
-    require(platformFeeAmount > 0, "Platform fee is zero");
+        uint256 platformFeeAmount = (amount * platformFee) / 100;
+        require(platformFeeAmount > 0, "Platform fee is zero");
 
-    // Transfer platform fee to the contract owner (admin)
-    (bool success, ) = admin.call{value: platformFeeAmount}("");
-    require(success, "Platform fee transfer failed");
-}
+        // Transfer platform fee to the contract owner (admin)
+        (bool success, ) = admin.call{value: platformFeeAmount}("");
+        require(success, "Platform fee transfer failed");
+    }
 
     // Function to add a new project
     function createLaunchpad(
@@ -210,7 +214,7 @@ contract LaunchpadContract {
 
     function vest(uint256 launchpadId, uint256 tokenAmount) external payable {
         require(!launchpads[launchpadId].cancel, "Launchpad canceled");
-        require(launchpads[launchpadId].live || launchpads[launchpadId].pauseUntil < block.timestamp, "Launchpad not active");
+        require(launchpads[launchpadId].live || block.timestamp > launchpads[launchpadId].pauseUntil, "Launchpad not active");
         require(block.timestamp <= launchpads[launchpadId].endTime, "Vesting already finished");
 
         uint256 holderIndex;
